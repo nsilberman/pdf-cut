@@ -19,10 +19,12 @@ def split_page_vertically(page):
     return left_half, right_half
 
 def crop_page(original_page, crop_box):
-    cropped_page = original_page.copy()
-    cropped_page.mediabox.lower_left = (crop_box[0], crop_box[1])
-    cropped_page.mediabox.upper_right = (crop_box[2], crop_box[3])
-    return cropped_page
+    cropped_page = PdfWriter()
+    cropped_page.add_page(original_page)
+    page = cropped_page.pages[0]
+    page.mediabox.lower_left = (crop_box[0], crop_box[1])
+    page.mediabox.upper_right = (crop_box[2], crop_box[3])
+    return page
 
 def process_pdf(input_pdf):
     output_files = []
