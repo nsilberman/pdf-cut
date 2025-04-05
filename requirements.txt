@@ -1,2 +1,5 @@
 streamlit
 pymupdf
+dotenv
+fitz
+anthropic

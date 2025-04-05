@@ -164,3 +164,4 @@ cython_debug/
 #.idea/
 corrections.csv
 copies/copie_*.pdf
+.env

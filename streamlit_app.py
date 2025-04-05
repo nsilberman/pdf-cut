@@ -4,8 +4,16 @@ import tempfile
 import os
 import pandas as pd
 from pathlib import Path
+import base64
+import dotenv
+import re
+from anthropic import Anthropic
 
 st.title("📚 Découpe et correction des copies élèves")
+
+# Chargement de la clé API Claude (Anthropic)
+dotenv.load_dotenv()
+API_KEY = os.getenv("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
 
 # Répertoire de stockage des copies découpées
 COPIES_DIR = Path("copies")
@@ -70,42 +78,68 @@ if uploaded_file:
     process_pdf(tmp_path)
     st.success("✅ Découpage terminé. Copies stockées dans le dossier 'copies'.")
 
-# Partie 2 : Sélection et affichage des copies stockées
+# Partie 2 : Correction avec OCR et prompt complémentaire
 copie_files = sorted(COPIES_DIR.glob("copie_*.pdf"))
 
 if copie_files:
-    selected_file = st.selectbox("📂 Choisis une copie à corriger", copie_files)
+    st.markdown("---")
+    st.subheader("🧠 Lancer une correction par OCR")
 
-    if selected_file:
-        st.info(f"Affichage de : {selected_file.name}")
-        with open(selected_file, "rb") as f:
-            st.download_button("📥 Télécharger cette copie", f, file_name=selected_file.name)
-            base64_pdf = f.read()
-            st.download_button("🔍 Voir dans le navigateur", base64_pdf, file_name=selected_file.name)
-            st.components.v1.iframe(src=selected_file.as_posix(), height=800)
+    selected_file = st.selectbox("📂 Choisis une copie à analyser via OCR", copie_files, key="ocr_select")
+    contexte_ia = st.text_area("📝 Ajoute un complément de contexte pour l'IA (consignes, barème, attentes...)")
 
-        st.markdown("---")
-        st.subheader("✏️ Correction de la copie")
-        note_qcm = st.number_input("Note QCM", min_value=0.0, max_value=10.0, step=0.5)
-        note_manu = st.number_input("Note manuscrit", min_value=0.0, max_value=10.0, step=0.5)
-        commentaire = st.text_area("Commentaire global")
+    if st.button("🔍 Lancer l'analyse OCR sur cette copie"):
+        if not API_KEY:
+            st.error("❌ Clé API Claude manquante. Ajoute-la dans .env ou dans les secrets Streamlit.")
+        else:
+            st.info(f"📄 Extraction des images depuis {selected_file.name}...")
+            doc = fitz.open(selected_file)
+            images = []
+            for page in doc:
+                pix = page.get_pixmap(dpi=100)
+                img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                images.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img_b64}})
 
-        if st.button("✅ Enregistrer la correction"):
-            new_data = pd.DataFrame([{ 
-                "copie": selected_file.name, 
-                "note_qcm": note_qcm, 
-                "note_manu": note_manu, 
-                "commentaire": commentaire
-            }])
+            client = Anthropic(api_key=API_KEY)
 
-            if CORRECTIONS_CSV.exists():
-                old_data = pd.read_csv(CORRECTIONS_CSV)
-                all_data = pd.concat([old_data, new_data], ignore_index=True)
-            else:
-                all_data = new_data
+            try:
+                msg = client.messages.create(
+                    model="claude-3-7-sonnet-20250219",
+                    max_tokens=1024,
+                    messages=[
+                        {"role": "user", "content": [{"type": "text", "text": contexte_ia}] + images}
+                    ]
+                )
+                response_text = msg.content[0].text
+                st.success("✅ Analyse terminée")
+                st.markdown(response_text)
 
-            all_data.to_csv(CORRECTIONS_CSV, index=False)
-            st.success("✅ Correction enregistrée !")
+                # Tentative d'extraction automatique de la note sur 20
+                note_match = re.search(r"\b(?:note|Note)\s*[:=\-]?\s*(\d+(?:[\.,]\d+)?)\s*/\s*20\b", response_text)
+                if note_match:
+                    note_val = float(note_match.group(1).replace(",", "."))
+                    st.success(f"🧮 Note détectée automatiquement : {note_val}/20")
+
+                    # Mise à jour dans le CSV
+                    new_data = pd.DataFrame([{ 
+                        "copie": selected_file.name, 
+                        "note_manu": note_val, 
+                        "commentaire": response_text
+                    }])
+
+                    if CORRECTIONS_CSV.exists():
+                        old_data = pd.read_csv(CORRECTIONS_CSV)
+                        all_data = pd.concat([old_data, new_data], ignore_index=True)
+                    else:
+                        all_data = new_data
+
+                    all_data.to_csv(CORRECTIONS_CSV, index=False)
+                    st.success("📥 Correction enregistrée dans le fichier CSV")
+                else:
+                    st.warning("⚠️ Impossible de détecter automatiquement une note sur 20 dans la réponse.")
+
+            except Exception as e:
+                st.error(f"Erreur lors de l'appel à l'API Claude : {e}")
 
 # Partie 3 : Affichage du tableau de synthèse des corrections
 if CORRECTIONS_CSV.exists():
