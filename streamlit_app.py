@@ -6,7 +6,6 @@ import pandas as pd
 from pathlib import Path
 import base64
 import dotenv
-import re
 from anthropic import Anthropic
 
 st.title("📚 Découpe et correction des copies élèves")
@@ -104,26 +103,33 @@ if copie_files:
 
             try:
                 msg = client.messages.create(
-                    model="claude-3-7-sonnet-20250219",
-                    max_tokens=1024,
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=1500,
                     messages=[
-                        {"role": "user", "content": [{"type": "text", "text": contexte_ia}] + images}
+                        {"role": "user", "content": [
+                            {"type": "text", "text": contexte_ia + "\n\nÀ partir de ce retour, peux-tu me donner les 3 notes suivantes dans ce format JSON uniquement : { \"note_totale\": x, \"note_qcm\": x, \"note_manu\": x }"}
+                        ] + images}
                     ]
                 )
                 response_text = msg.content[0].text
                 st.success("✅ Analyse terminée")
                 st.markdown(response_text)
 
-                # Tentative d'extraction automatique de la note sur 20
-                note_match = re.search(r"\b(?:note|Note)\s*[:=\-]?\s*(\d+(?:[\.,]\d+)?)\s*/\s*20\b", response_text)
-                if note_match:
-                    note_val = float(note_match.group(1).replace(",", "."))
-                    st.success(f"🧮 Note détectée automatiquement : {note_val}/20")
+                import json
+                try:
+                    json_part = json.loads(response_text.strip().split("\n")[-1])
+                    note_totale = float(json_part.get("note_totale", 0))
+                    note_qcm = float(json_part.get("note_qcm", 0))
+                    note_manu = float(json_part.get("note_manu", 0))
+
+                    st.success(f"🧮 Note détectée : {note_totale}/20 (QCM : {note_qcm}, Manuscrit : {note_manu})")
 
                     # Mise à jour dans le CSV
                     new_data = pd.DataFrame([{ 
                         "copie": selected_file.name, 
-                        "note_manu": note_val, 
+                        "note_totale": note_totale,
+                        "note_qcm": note_qcm,
+                        "note_manu": note_manu,
                         "commentaire": response_text
                     }])
 
@@ -135,8 +141,9 @@ if copie_files:
 
                     all_data.to_csv(CORRECTIONS_CSV, index=False)
                     st.success("📥 Correction enregistrée dans le fichier CSV")
-                else:
-                    st.warning("⚠️ Impossible de détecter automatiquement une note sur 20 dans la réponse.")
+
+                except Exception as e:
+                    st.warning(f"⚠️ Impossible de parser la réponse en JSON : {e}")
 
             except Exception as e:
                 st.error(f"Erreur lors de l'appel à l'API Claude : {e}")
