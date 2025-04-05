@@ -1,6 +1,5 @@
 import streamlit as st
 from PyPDF2 import PdfReader, PdfWriter
-from PyPDF2.generic import RectangleObject
 import tempfile
 import os
 
@@ -11,13 +10,19 @@ uploaded_file = st.file_uploader("Dépose ton fichier PDF avec toutes les copies
 # Fonction pour découper une page A3 en deux A4 (horizontal split)
 def split_page_vertically(page):
     media_box = page.mediabox
-    width = media_box.right
-    height = media_box.top
+    width = float(media_box.right)
+    height = float(media_box.top)
 
-    left_half = RectangleObject([0, 0, width / 2, height])
-    right_half = RectangleObject([width / 2, 0, width, height])
+    left_half = [0, 0, width / 2, height]
+    right_half = [width / 2, 0, width, height]
 
     return left_half, right_half
+
+def crop_page(original_page, crop_box):
+    cropped_page = original_page.copy()
+    cropped_page.mediabox.lower_left = (crop_box[0], crop_box[1])
+    cropped_page.mediabox.upper_right = (crop_box[2], crop_box[3])
+    return cropped_page
 
 def process_pdf(input_pdf):
     output_files = []
@@ -38,9 +43,8 @@ def process_pdf(input_pdf):
         left_verso, right_verso = split_page_vertically(a3_verso)
 
         # Ajout dans l'ordre logique : 1,2,3,4 manuscrites, puis QCM
-        for crop, base_page in zip([right_recto, left_verso, right_verso, left_recto], [a3_recto]*2 + [a3_verso]*2):
-            cropped = base_page
-            cropped.mediabox = crop
+        for crop_box, base_page in zip([right_recto, left_verso, right_verso, left_recto], [a3_recto]*2 + [a3_verso]*2):
+            cropped = crop_page(base_page, crop_box)
             writer.add_page(cropped)
 
         writer.add_page(qcm_page)
