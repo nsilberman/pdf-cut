@@ -195,6 +195,16 @@ if copie_files:
                 except Exception as e:
                     st.error(f"Erreur lors de l'appel à l'API Claude : {e}")
 
+# Partie 2.9 : Bouton de réinitialisation
+st.markdown("---")
+st.subheader("🧹 Réinitialiser l'application")
+if st.button("🗑️ Tout supprimer (copies + corrections)"):
+    for f in COPIES_DIR.glob("*.pdf"):
+        f.unlink()
+    if CORRECTIONS_CSV.exists():
+        CORRECTIONS_CSV.unlink()
+    st.success("✅ Tous les fichiers ont été supprimés. Rechargez l'application pour recommencer.")
+
 # Partie 3 : Affichage du tableau de synthèse des corrections
 if CORRECTIONS_CSV.exists():
     st.markdown("---")
