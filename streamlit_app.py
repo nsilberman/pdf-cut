@@ -165,11 +165,11 @@ if copie_files:
                         prenom = ""
                         if matricule_df is not None:
                             match = matricule_df[matricule_df["matricule"] == matricule]
-                            if not match.empty:
-                                nom = match.iloc[0].get("nom", "")
-                                prenom = match.iloc[0].get("prenom", "")
-                        
-                                new_data = pd.DataFrame([{ "copie": selected_file.name,
+                        if not match.empty:
+                            nom = match.iloc[0].get("nom", "")
+                            prenom = match.iloc[0].get("prenom", "")
+
+                        new_data = pd.DataFrame([{ "copie": selected_file.name,
                             "matricule": matricule,
                             "prenom": prenom,
                             "nom": nom,
