@@ -84,69 +84,90 @@ if copie_files:
     st.markdown("---")
     st.subheader("🧠 Lancer une correction par OCR")
 
-    selected_file = st.selectbox("📂 Choisis une copie à analyser via OCR", copie_files, key="ocr_select")
+    mode = st.radio("🔘 Mode de correction", ["Une seule copie", "Toutes les copies", "Corriger le reste non traité"])
     contexte_ia = st.text_area("📝 Ajoute un complément de contexte pour l'IA (consignes, barème, attentes...)")
 
-    if st.button("🔍 Lancer l'analyse OCR sur cette copie"):
-        if not API_KEY:
-            st.error("❌ Clé API Claude manquante. Ajoute-la dans .env ou dans les secrets Streamlit.")
+    if mode == "Une seule copie":
+        selected_files = [st.selectbox("📂 Choisis une copie à analyser via OCR", copie_files, key="ocr_select")]
+    elif mode == "Toutes les copies":
+        selected_files = copie_files
+    else:
+        if CORRECTIONS_CSV.exists():
+            done_df = pd.read_csv(CORRECTIONS_CSV)
+            done_copies = set(done_df['copie'].tolist())
+            selected_files = [f for f in copie_files if f.name not in done_copies]
+            st.info(f"📂 {len(selected_files)} copies non encore corrigées seront traitées.")
         else:
-            st.info(f"📄 Extraction des images depuis {selected_file.name}...")
-            doc = fitz.open(selected_file)
-            images = []
-            for page in doc:
-                pix = page.get_pixmap(dpi=100)
-                img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
-                images.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img_b64}})
+            selected_files = copie_files
 
-            client = Anthropic(api_key=API_KEY)
+    if st.button("🔍 Lancer l'analyse OCR sur la/les copie(s)"):
+        for selected_file in selected_files:
+            st.markdown(f"### 📄 Correction de {selected_file.name}")
+            if not API_KEY:
+                st.error("❌ Clé API Claude manquante. Ajoute-la dans .env ou dans les secrets Streamlit.")
+                continue
+            else:
+                st.info(f"📄 Extraction des images depuis {selected_file.name}...")
 
-            try:
-                msg = client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=1500,
-                    messages=[
-                        {"role": "user", "content": [
-                            {"type": "text", "text": contexte_ia + "\n\nÀ partir de ce retour, peux-tu me donner les 3 notes suivantes dans ce format JSON uniquement : { \"note_totale\": x, \"note_qcm\": x, \"note_manu\": x }. Place ce json à la fin de la réponse"}
-                        ] + images}
-                    ]
-                )
-                response_text = msg.content[0].text
-                st.success("✅ Analyse terminée")
-                st.markdown(response_text)
+                doc = fitz.open(selected_file)
+                images = []
+                for page in doc:
+                    pix = page.get_pixmap(dpi=100)
+                    img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                    images.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img_b64}})
 
-                import json
+                client = Anthropic(api_key=API_KEY)
+
                 try:
-                    json_part = json.loads(response_text.strip().split("\n")[-1])
-                    note_totale = float(json_part.get("note_totale", 0))
-                    note_qcm = float(json_part.get("note_qcm", 0))
-                    note_manu = float(json_part.get("note_manu", 0))
+                    msg = client.messages.create(
+                        model="claude-3-5-sonnet-20241022",
+                        max_tokens=1500,
+                        messages=[
+                            {"role": "user", "content": [{"type": "text", "text": contexte_ia + "\n\nÀ partir de ce retour, peux-tu me donner les 4 éléments suivants dans ce format JSON uniquement : { \"matricule\": \"B04380\", \"note_totale\": x, \"note_qcm\": x, \"note_manu\": x }. Place ce json à la fin de la réponse"}
+                            ] + images}
+                        ]
+                    )
+                    response_text = msg.content[0].text
+                    st.success("✅ Analyse terminée")
+                    st.markdown(response_text)
 
-                    st.success(f"🧮 Note détectée : {note_totale}/20 (QCM : {note_qcm}, Manuscrit : {note_manu})")
+                    import json
+                    try:
+                        import re
+                        json_match = re.search(r"\{.*?\}", response_text, re.DOTALL)
+                        if not json_match:
+                            raise ValueError("Aucun bloc JSON détecté dans la réponse de Claude.")
+                        json_part = json.loads(json_match.group(0))
+                        note_totale = float(json_part.get("note_totale", 0))
+                        note_qcm = float(json_part.get("note_qcm", 0))
+                        note_manu = float(json_part.get("note_manu", 0))
+                        matricule = json_part.get("matricule", "inconnu")
 
-                    # Mise à jour dans le CSV
-                    new_data = pd.DataFrame([{ 
-                        "copie": selected_file.name, 
-                        "note_totale": note_totale,
-                        "note_qcm": note_qcm,
-                        "note_manu": note_manu,
-                        "commentaire": response_text
-                    }])
+                        st.success(f"🧮 Note détectée : {note_totale}/20 (QCM : {note_qcm}, Manuscrit : {note_manu})")
 
-                    if CORRECTIONS_CSV.exists():
-                        old_data = pd.read_csv(CORRECTIONS_CSV)
-                        all_data = pd.concat([old_data, new_data], ignore_index=True)
-                    else:
-                        all_data = new_data
+                        new_data = pd.DataFrame([{ 
+                            "copie": selected_file.name,
+                            "matricule": matricule,
+                            "note_totale": note_totale,
+                            "note_qcm": note_qcm,
+                            "note_manu": note_manu,
+                            "commentaire": response_text
+                        }])
 
-                    all_data.to_csv(CORRECTIONS_CSV, index=False)
-                    st.success("📥 Correction enregistrée dans le fichier CSV")
+                        if CORRECTIONS_CSV.exists():
+                            old_data = pd.read_csv(CORRECTIONS_CSV)
+                            all_data = pd.concat([old_data, new_data], ignore_index=True)
+                        else:
+                            all_data = new_data
+
+                        all_data.to_csv(CORRECTIONS_CSV, index=False)
+                        st.success("📥 Correction enregistrée dans le fichier CSV")
+
+                    except Exception as e:
+                        st.warning(f"⚠️ Impossible de parser la réponse en JSON : {e}")
 
                 except Exception as e:
-                    st.warning(f"⚠️ Impossible de parser la réponse en JSON : {e}")
-
-            except Exception as e:
-                st.error(f"Erreur lors de l'appel à l'API Claude : {e}")
+                    st.error(f"Erreur lors de l'appel à l'API Claude : {e}")
 
 # Partie 3 : Affichage du tableau de synthèse des corrections
 if CORRECTIONS_CSV.exists():
@@ -155,4 +176,3 @@ if CORRECTIONS_CSV.exists():
     corrections_df = pd.read_csv(CORRECTIONS_CSV)
     st.dataframe(corrections_df)
     st.download_button("📥 Télécharger toutes les corrections (CSV)", corrections_df.to_csv(index=False).encode("utf-8"), file_name="corrections.csv", mime="text/csv")
-
