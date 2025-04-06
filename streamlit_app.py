@@ -77,6 +77,18 @@ if uploaded_file:
     process_pdf(tmp_path)
     st.success("✅ Découpage terminé. Copies stockées dans le dossier 'copies'.")
 
+# Partie 1.5 : Téléversement de la liste des matricules officiels
+matricule_df = None
+matricule_file = st.file_uploader("📑 Importer la liste officielle des matricules (CSV avec colonnes 'BID', 'Nom', 'Prénom')", type=["csv"])
+if matricule_file:
+    try:
+        matricule_df = pd.read_csv(matricule_file, sep=None, engine='python')
+        # Normalisation des noms de colonnes attendues
+        matricule_df = matricule_df.rename(columns={"BID": "matricule", "Nom": "nom", "Prénom": "prenom"})
+        st.success("✅ Liste des matricules chargée : {} entrées.".format(len(matricule_df)))
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la lecture du fichier Excel : {e}")
+
 # Partie 2 : Correction avec OCR et prompt complémentaire
 copie_files = sorted(COPIES_DIR.glob("copie_*.pdf"))
 
@@ -123,8 +135,9 @@ if copie_files:
                         model="claude-3-5-sonnet-20241022",
                         max_tokens=1500,
                         messages=[
-                            {"role": "user", "content": [{"type": "text", "text": contexte_ia + "\n\nÀ partir de ce retour, peux-tu me donner les 4 éléments suivants dans ce format JSON uniquement : { \"matricule\": \"B04380\", \"note_totale\": x, \"note_qcm\": x, \"note_manu\": x }. Place ce json à la fin de la réponse"}
-                            ] + images}
+                            {"role": "user", "content": [
+                              {"type": "text", "text": contexte_ia + "\n\nÀ partir de ce retour, peux-tu me donner les 4 éléments suivants dans ce format JSON uniquement : { \"matricule\": \"B04380\", \"note_totale\": x, \"note_qcm\": x, \"note_manu\": x }. Place ce json à la fin de la réponse" + (f"\n\nVoici la liste des matricules valides : {matricule_df['matricule'].dropna().unique().tolist()}" if matricule_df is not None else "")}
+] + images}
                         ]
                     )
                     response_text = msg.content[0].text
@@ -143,10 +156,23 @@ if copie_files:
                         note_manu = float(json_part.get("note_manu", 0))
                         matricule = json_part.get("matricule", "inconnu")
 
+                        if matricule_df is not None and matricule not in matricule_df["matricule"].values:
+                            st.warning(f"⚠️ Le matricule détecté ({matricule}) ne figure pas dans la liste officielle.")
+
                         st.success(f"🧮 Note détectée : {note_totale}/20 (QCM : {note_qcm}, Manuscrit : {note_manu})")
 
-                        new_data = pd.DataFrame([{ 
-                            "copie": selected_file.name,
+                        nom = ""
+                        prenom = ""
+                        if matricule_df is not None:
+                            match = matricule_df[matricule_df["matricule"] == matricule]
+                            if not match.empty:
+                                nom = match.iloc[0].get("nom", "")
+                                prenom = match.iloc[0].get("prenom", "")
+                        
+                                new_data = pd.DataFrame([{ "copie": selected_file.name,
+                            "matricule": matricule,
+                            "prenom": prenom,
+                            "nom": nom,
                             "matricule": matricule,
                             "note_totale": note_totale,
                             "note_qcm": note_qcm,
