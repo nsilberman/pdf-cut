@@ -107,7 +107,7 @@ if copie_files:
                     max_tokens=1500,
                     messages=[
                         {"role": "user", "content": [
-                            {"type": "text", "text": contexte_ia + "\n\nÀ partir de ce retour, peux-tu me donner les 3 notes suivantes dans ce format JSON uniquement : { \"note_totale\": x, \"note_qcm\": x, \"note_manu\": x }"}
+                            {"type": "text", "text": contexte_ia + "\n\nÀ partir de ce retour, peux-tu me donner les 3 notes suivantes dans ce format JSON uniquement : { \"note_totale\": x, \"note_qcm\": x, \"note_manu\": x }. Place ce json à la fin de la réponse"}
                         ] + images}
                     ]
                 )
@@ -155,3 +155,4 @@ if CORRECTIONS_CSV.exists():
     corrections_df = pd.read_csv(CORRECTIONS_CSV)
     st.dataframe(corrections_df)
     st.download_button("📥 Télécharger toutes les corrections (CSV)", corrections_df.to_csv(index=False).encode("utf-8"), file_name="corrections.csv", mime="text/csv")
+
