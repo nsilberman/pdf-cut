@@ -136,7 +136,7 @@ if copie_files:
                         max_tokens=1500,
                         messages=[
                             {"role": "user", "content": [
-                              {"type": "text", "text": contexte_ia + "\n\nÀ partir de ce retour, peux-tu me donner les 4 éléments suivants dans ce format JSON uniquement : { \"matricule\": \"B04380\", \"note_totale\": x, \"note_qcm\": x, \"note_manu\": x }. Place ce json à la fin de la réponse" + (f"\n\nVoici la liste des matricules valides : {matricule_df['matricule'].dropna().unique().tolist()}" if matricule_df is not None else "")}
+                              {"type": "text", "text": contexte_ia + "\n\nÀ partir de ce retour, peux-tu me donner les 4 éléments suivants dans ce format JSON uniquement : { \"matricule\": \"B04380\", \"note_totale\": x, \"note_qcm\": x, \"note_manu\": x }. Place ce json à la fin de la réponse" + (f"\n\nVoici la liste des matricules valides, verifie bien qu'il s'agit du bon et tu peux aussi verifier que le matricule correspond au nom et prenom inscrit sur la feuille : {matricule_df['matricule'].dropna().unique().tolist()}" if matricule_df is not None else "")}
 ] + images}
                         ]
                     )
